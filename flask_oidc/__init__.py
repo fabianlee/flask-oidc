@@ -33,6 +33,10 @@ import logging
 from warnings import warn
 import calendar
 
+import urllib.request
+import jwt
+#from jwt import JWT, jwk_from_dict, jwk_from_pem
+
 from six.moves.urllib.parse import urlencode
 from flask import request, session, redirect, url_for, g, current_app, abort
 from oauth2client.client import flow_from_clientsecrets, OAuth2WebServerFlow,\
@@ -159,6 +163,9 @@ class OpenIDConnect(object):
         # oauth2client library defaults to
         app.config.setdefault('OIDC_INTROSPECTION_AUTH_METHOD', 'client_secret_post')
         app.config.setdefault('OIDC_TOKEN_TYPE_HINT', 'access_token')
+
+        # used instead of introspection which is not standard OAuth2 spec
+        app.config.setdefault('OIDC_JWKS_URI', '/adfs/discovery/keys')
 
         if not 'openid' in app.config['OIDC_SCOPES']:
             raise ValueError('The value "openid" must be in the OIDC_SCOPES')
@@ -784,6 +791,7 @@ class OpenIDConnect(object):
 
         .. versionadded:: 1.1
         """
+
         valid = self._validate_token(token, scopes_required)
         if valid is True:
             return True
@@ -806,28 +814,41 @@ class OpenIDConnect(object):
                 token_info = {'active': False}
                 logger.error('ERROR: Unable to get token info')
                 logger.error(str(ex))
+                return str(ex)
 
-            valid_token = token_info.get('active', False)
+            jwks_uri = current_app.config['OIDC_JWKS_URI']
+            if not jwks_uri:
+                valid_token = token_info.get('active', False)
+            else:
+                valid_token = True
+                print('--- token_info --')
+                print(token_info)
 
-            if 'aud' in token_info and \
-                    current_app.config['OIDC_RESOURCE_CHECK_AUD']:
-                valid_audience = False
-                aud = token_info['aud']
-                clid = self.client_secrets['client_id']
-                if isinstance(aud, list):
-                    valid_audience = clid in aud
-                else:
-                    valid_audience = clid == aud
+                if 'aud' in token_info and \
+                        current_app.config['OIDC_RESOURCE_CHECK_AUD']:
+                    valid_audience = False
+                    aud = token_info['aud']
+                    clid = self.client_secrets['client_id']
+                    if isinstance(aud, list):
+                        valid_audience = clid in aud
+                    else:
+                        valid_audience = clid == aud
+    
+                    if not valid_audience:
+                        logger.error('Refused token because of invalid '
+                                     'audience')
+                        valid_token = False
 
-                if not valid_audience:
-                    logger.error('Refused token because of invalid '
-                                 'audience')
-                    valid_token = False
-
+            print(f'valid_token before scope check {valid_token}')
             if valid_token:
-                token_scopes = token_info.get('scope', '').split(' ')
+                scope_from_token = token_info.get('scope') if token_info.get('scope') else token_info.get('scp')
+                print(f'scope_from_token = {scope_from_token}')
+                token_scopes = scope_from_token.split(' ') if scope_from_token else []
+                #token_scopes = token_info.get('scope', '').split(' ')
             else:
                 token_scopes = []
+            print(f'token_scopes = {token_scopes}')
+            print(f'scopes_required = {scopes_required}')
             has_required_scopes = scopes_required.issubset(
                 set(token_scopes))
 
@@ -898,6 +919,24 @@ class OpenIDConnect(object):
         return wrapper
 
     def _get_token_info(self, token):
+
+        print("_get_token_info")
+        jwks_url = "https://" + current_app.config['OIDC_ADFS'] + "/" + current_app.config['OIDC_JWKS_URI'] 
+        print(jwks_url)
+        if jwks_url:
+          jwto = jwt.JWT()
+          with open('/home/fabian/docker-flask-oidc/client-app/win2k19-adfs1.json', 'r') as fh:
+            j = json.load(fh)
+            print(j['keys'][0])
+            verifying_key = jwt.jwk_from_dict(j['keys'][0])
+            print(verifying_key)
+          print('=====')
+          print(verifying_key)
+
+          message_received = jwto.decode(token, verifying_key, do_time_check=True)
+          print(message_received)
+          return message_received
+
         # We hardcode to use client_secret_post, because that's what the Google
         # oauth2client library defaults to
         request = {'token': token}
