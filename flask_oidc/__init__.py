@@ -921,16 +921,24 @@ class OpenIDConnect(object):
     def _get_token_info(self, token):
 
         print("_get_token_info")
-        jwks_url = "https://" + current_app.config['OIDC_ADFS'] + "/" + current_app.config['OIDC_JWKS_URI'] 
-        print(jwks_url)
+        #jwks_url = "https://" + current_app.config['OIDC_ADFS'] + "/" + current_app.config['OIDC_JWKS_URI'] 
+        jwks_url = self.client_secrets['token_introspection_uri']
+        print(f'jwks_url: {jwks_url}')
         if jwks_url:
           jwto = jwt.JWT()
-          with open('/home/fabian/docker-flask-oidc/client-app/win2k19-adfs1.json', 'r') as fh:
-            j = json.load(fh)
+
+          try:
+            content = http.request(jwks_url)[1]
+            #print( content.decode() )
+            print(f'SUCCESS pulling jwks')
+            j = json.load(content)
             print(j['keys'][0])
             verifying_key = jwt.jwk_from_dict(j['keys'][0])
-            print(verifying_key)
-          print('=====')
+            print(f'verifying_key: {verifying_key}')
+          except Exception as e:
+            print("ERROR while trying to pull jwks_url")
+            raise(e)
+          print('=OK====')
           print(verifying_key)
 
           message_received = jwto.decode(token, verifying_key, do_time_check=True)
