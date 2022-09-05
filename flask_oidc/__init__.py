@@ -922,8 +922,7 @@ class OpenIDConnect(object):
     def _get_token_info(self, token):
 
         print("_get_token_info")
-        #jwks_url = "https://" + current_app.config['OIDC_ADFS'] + "/" + current_app.config['OIDC_JWKS_URI'] 
-        jwks_url = self.client_secrets['token_introspection_uri']
+        jwks_url = "https://" + current_app.config['OIDC_ADFS'] + "/" + current_app.config['OIDC_JWKS_URI'] 
         print(f'jwks_url: {jwks_url}')
         if jwks_url:
           jwto = jwt.JWT()
