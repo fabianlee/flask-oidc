@@ -811,6 +811,7 @@ class OpenIDConnect(object):
             try:
                 token_info = self._get_token_info(token)
             except Exception as ex:
+                raise(ex)
                 token_info = {'active': False}
                 logger.error('ERROR: Unable to get token info')
                 logger.error(str(ex))
@@ -927,16 +928,18 @@ class OpenIDConnect(object):
         if jwks_url:
           jwto = jwt.JWT()
 
+          http = httplib2.Http()
           try:
             content = http.request(jwks_url)[1]
-            #print( content.decode() )
+            print( content.decode() )
             print(f'SUCCESS pulling jwks')
-            j = json.load(content)
+            j = json.loads(content.decode())
             print(j['keys'][0])
             verifying_key = jwt.jwk_from_dict(j['keys'][0])
             print(f'verifying_key: {verifying_key}')
           except Exception as e:
             print("ERROR while trying to pull jwks_url")
+            print(e)
             raise(e)
           print('=OK====')
           print(verifying_key)
