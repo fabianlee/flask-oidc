@@ -528,6 +528,29 @@ class OpenIDConnect(object):
             return decorated
         return wrapper
 
+    def require_groups(self, client, group):
+        """
+        Function to check for an ADFS 'group' claim in JWT access token.
+
+        This is intended to be replaced with a more generic 'require this value
+        in token or claims' system, at which point backwards compatibility will
+        be added.
+
+        .. versionadded:: 1.5.0
+        """
+        def wrapper(view_func):
+            @wraps(view_func)
+            def decorated(*args, **kwargs):
+                pre, tkn, post = self.get_access_token().split('.')
+                access_token = json.loads(b64decode(tkn))
+                print('fabout to check for group {group}')
+                if group in access_token['resource_access'][client]['group']:
+                    return view_func(*args, **kwargs)
+                else:
+                    return abort(403)
+            return decorated
+        return wrapper
+
     def flow_for_request(self):
         """
         .. deprecated:: 1.0
@@ -773,7 +796,7 @@ class OpenIDConnect(object):
         self._set_cookie_id_token(None)
 
     # Below here is for resource servers to validate tokens
-    def validate_token(self, token, scopes_required=None):
+    def validate_token(self, token, scopes_required=None, groups_required=None):
         """
         This function can be used to validate tokens.
 
@@ -792,21 +815,26 @@ class OpenIDConnect(object):
         .. versionadded:: 1.1
         """
 
-        valid = self._validate_token(token, scopes_required)
+        valid = self._validate_token(token, scopes_required, groups_required)
         if valid is True:
             return True
         else:
             return ErrStr(valid)
 
-    def _validate_token(self, token, scopes_required=None):
+    def _validate_token(self, token, scopes_required=None, groups_required=None):
         """The actual implementation of validate_token."""
         if scopes_required is None:
             scopes_required = []
         scopes_required = set(scopes_required)
 
+        if groups_required is None:
+            groups_required = []
+        groups_required = set(groups_required)
+
         token_info = None
         valid_token = False
         has_required_scopes = False
+        has_required_groups = False
         if token:
             try:
                 token_info = self._get_token_info(token)
@@ -822,8 +850,9 @@ class OpenIDConnect(object):
                 valid_token = token_info.get('active', False)
             else:
                 valid_token = True
-                print('--- token_info --')
+                print('--- BEGIN Access Token claims ---')
                 print(token_info)
+                print('--- END Access Token claims ---')
 
                 if 'aud' in token_info and \
                         current_app.config['OIDC_RESOURCE_CHECK_AUD']:
@@ -856,7 +885,22 @@ class OpenIDConnect(object):
             if not has_required_scopes:
                 logger.debug('Token missed required scopes')
 
-        if (valid_token and has_required_scopes):
+            print(f'valid_token before group check {valid_token}')
+            if valid_token:
+                group_from_token = token_info.get('group') if token_info.get('group') else ""
+                print(f'group_from_token = {group_from_token}')
+                token_groups = group_from_token if group_from_token else []
+            else:
+                token_groups = []
+            print(f'token_groups= {token_groups}')
+            print(f'groups_required = {groups_required}')
+            has_required_groups = groups_required.issubset(
+                set(token_groups))
+            if not has_required_groups:
+                logger.debug('Token missed required groups')
+
+
+        if (valid_token and has_required_scopes and has_required_groups):
             g.oidc_token_info = token_info
             return True
 
@@ -864,10 +908,12 @@ class OpenIDConnect(object):
             return 'Token required but invalid'
         elif not has_required_scopes:
             return 'Token does not have required scopes'
+        elif not has_required_groups:
+            return 'Token does not have required groups'
         else:
             return 'Something went wrong checking your token'
 
-    def accept_token(self, require_token=False, scopes_required=None,
+    def accept_token(self, require_token=False, scopes_required=None, groups_required=None,
                            render_errors=True):
         """
         Use this to decorate view functions that should accept OAuth2 tokens,
@@ -906,7 +952,7 @@ class OpenIDConnect(object):
                 elif 'access_token' in request.args:
                     token = request.args['access_token']
 
-                validity = self.validate_token(token, scopes_required)
+                validity = self.validate_token(token, scopes_required, groups_required)
                 if (validity is True) or (not require_token):
                     return view_func(*args, **kwargs)
                 else:
@@ -914,14 +960,18 @@ class OpenIDConnect(object):
                                      'error_description': validity}
                     if render_errors:
                         response_body = json.dumps(response_body)
-                    return response_body, 401, {'WWW-Authenticate': 'Bearer'}
+
+                    # 'does not have required' will prefix message when scope/group requirements not met
+                    if (str(validity).__contains__("does not have required ")):
+                        return response_body, 403, {'WWW-Authenticate': 'Bearer'}
+                    else:
+                        return response_body, 401, {'WWW-Authenticate': 'Bearer'}
 
             return decorated
         return wrapper
 
     def _get_token_info(self, token):
 
-        print("_get_token_info")
         jwks_url = "https://" + current_app.config['OIDC_ADFS'] + "/" + current_app.config['OIDC_JWKS_URI'] 
         print(f'jwks_url: {jwks_url}')
         if jwks_url:
@@ -930,21 +980,21 @@ class OpenIDConnect(object):
           http = httplib2.Http()
           try:
             content = http.request(jwks_url)[1]
-            print( content.decode() )
+            #print( content.decode() )
             print(f'SUCCESS pulling jwks')
             j = json.loads(content.decode())
-            print(j['keys'][0])
             verifying_key = jwt.jwk_from_dict(j['keys'][0])
-            print(f'verifying_key: {verifying_key}')
+            alg = j['keys'][0]['alg']
+            x509  = j['keys'][0]['x5c'][0]
+            print(f'JWKS reports key type {alg} with x509 cert {x509}')
           except Exception as e:
             print("ERROR while trying to pull jwks_url")
             print(e)
             raise(e)
-          print('=OK====')
-          print(verifying_key)
+          #print(verifying_key)
 
           message_received = jwto.decode(token, verifying_key, do_time_check=True)
-          print(message_received)
+          #print(message_received)
           return message_received
 
         # We hardcode to use client_secret_post, because that's what the Google
