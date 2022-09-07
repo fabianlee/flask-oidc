@@ -106,7 +106,7 @@ class OpenIDConnect(object):
     The core OpenID Connect client object.
     """
     def __init__(self, app=None, credentials_store=None, http=None, time=None,
-                 urandom=None):
+                 urandom=None, prepopulate_from_well_known_url=False):
         self.credentials_store = credentials_store\
             if credentials_store is not None\
             else MemoryCredentials()
@@ -124,16 +124,17 @@ class OpenIDConnect(object):
 
         # get stuff from the app's config, which may override stuff set above
         if app is not None:
-            self.init_app(app)
+            self.init_app(app, prepopulate_from_well_known_url)
 
-    def init_app(self, app):
+
+    def init_app(self, app, prepopulate_from_well_known_url=False):
         """
         Do setup that requires a Flask app.
 
         :param app: The application to initialize.
         :type app: Flask
         """
-        secrets = self.load_secrets(app)
+        secrets = self.load_secrets(app, prepopulate_from_well_known_url)
         self.client_secrets = list(secrets.values())[0]
         secrets_cache = DummySecretsCache(secrets)
 
@@ -164,9 +165,6 @@ class OpenIDConnect(object):
         app.config.setdefault('OIDC_INTROSPECTION_AUTH_METHOD', 'client_secret_post')
         app.config.setdefault('OIDC_TOKEN_TYPE_HINT', 'access_token')
 
-        # used instead of introspection which is not standard OAuth2 spec
-        app.config.setdefault('OIDC_JWKS_URI', '/adfs/discovery/keys')
-
         if not 'openid' in app.config['OIDC_SCOPES']:
             raise ValueError('The value "openid" must be in the OIDC_SCOPES')
 
@@ -194,13 +192,74 @@ class OpenIDConnect(object):
         except KeyError:
             pass
 
-    def load_secrets(self, app):
+    def get_client_secrets(self):
+        """Return client_secrets for reference values
+        """
+        return self.client_secrets
+
+    def load_secrets(self, app, prepopulate_from_well_known_url=False):
+   
         # Load client_secrets.json to pre-initialize some configuration
         content = app.config['OIDC_CLIENT_SECRETS']
         if isinstance(content, dict):
-            return content
+            # option to load some values from Auth Server well-known config
+            if prepopulate_from_well_known_url:
+              well_known_dict = self.auto_populate_openid_configuration(app)
+            else:
+              well_known_dict = { "web": {} }
+
+            # overwrite values coming from user dictionary
+            for key in content['web']:
+              well_known_dict['web'][key] = content['web'][key]
+              print(f'overwriting {key} from user supplied OIDC_CLIENT_SECRETS dictionary')
+
+            return well_known_dict
         else:
             return _json_loads(open(content, 'r').read())
+
+    def auto_populate_openid_configuration(self, app):
+      """ reaches out to Auth Server .well-known/openid-configuration to prepopulate common URL locations
+      """
+      http = httplib2.Http()
+      WELL_KNOWN_URL = app.config['OIDC_WELL_KNOWN_OPENID_CONFIG_URL'] if app.config.get('OIDC_WELL_KNOWN_OPENID_CONFIG_URL') else ''
+      AUTH_PROVIDER = app.config['OIDC_AUTH_PROVIDER']
+      AUTH_SERVER = app.config['OIDC_AUTH_SERVER']
+      if len(WELL_KNOWN_URL)>0:
+        well_known = WELL_KNOWN_URL
+      elif ("keycloak" == AUTH_PROVIDER):
+        REALM = app.config['OIDC_OPENID_REALM']
+        well_known = f'https://{AUTH_SERVER}/realms/{REALM}/.well-known/openid-configuration'
+      elif ("adfs" == AUTH_PROVIDER):
+        well_known = f'https://{AUTH_SERVER}/adfs/.well-known/openid-configuration'
+      else:
+        well_known = f'https://{AUTH_SERVER}/.well-known/openid-configuration'
+      print(well_known)
+      try:
+        content = http.request(well_known)[1]
+        #print( content.decode() )
+        print("SUCCESS pulling openid-configuration, proves Auth Server certificate is valid in CA filestore")
+      
+        # populate dictionary instead of requiring 'client_secrets.json' file
+        # better for configuring docker containers
+        j = json.loads(content)
+        client_secrets_dict = {
+          "web": {
+              "issuer": j['issuer'],
+              "userinfo_uri": j['userinfo_endpoint'],
+              "auth_uri": j['authorization_endpoint'],
+              "token_uri": j['token_endpoint'],
+              "jwks_uri": j['jwks_uri'],
+              "end_session_endpoint": j['end_session_endpoint']
+          }
+        }
+        print(f'populated from well-known: {client_secrets_dict}')
+        return client_secrets_dict
+      except ssl.SSLCertVerificationError as e:
+        print("SSL verification error, Auth Server cert and root not loaded into the root CA")
+        raise(e)
+      except Exception as e:
+        print("ERROR could not reach Auth Server well known configuration using httplib2")
+        return {"web": {} }
 
     @property
     def user_loggedin(self):
@@ -845,7 +904,7 @@ class OpenIDConnect(object):
                 logger.error(str(ex))
                 return str(ex)
 
-            jwks_uri = current_app.config['OIDC_JWKS_URI']
+            jwks_uri = self.client_secrets['jwks_uri']
             if not jwks_uri:
                 valid_token = token_info.get('active', False)
             else:
@@ -972,7 +1031,7 @@ class OpenIDConnect(object):
 
     def _get_token_info(self, token):
 
-        jwks_url = "https://" + current_app.config['OIDC_ADFS'] + "/" + current_app.config['OIDC_JWKS_URI'] 
+        jwks_url = self.client_secrets['jwks_uri']
         print(f'jwks_url: {jwks_url}')
         if jwks_url:
           jwto = jwt.JWT()
