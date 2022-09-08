@@ -4,9 +4,9 @@ flask-oidc fork with enhancements
 This fork was created by `fabianlee <https://github.com/fabianlee>`_ as a proof of concept for the following features:
 
 * Support Windows 2019 ADFS as OAuth2 Authentication Server
-* Support Keycloak as OAuth2 Authentication Servr
-* Additional 'groups_required' attribute on method decorator
-* Parameter 'prepopulate_from_well_known_url' to load most config URL from well-known/openid-configuration
+* Support Keycloak as OAuth2 Authentication Server
+* Additional 'groups_required' attribute on method decorator, @oidc.accept_token
+* Parameter 'prepopulate_from_well_known_url' loads most config URL from well-known/openid-configuration
 
 
 Python OAuth2 Client App and Resource Server
