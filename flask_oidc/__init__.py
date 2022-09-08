@@ -35,6 +35,7 @@ import calendar
 
 import urllib.request
 import jwt
+import re
 #from jwt import JWT, jwk_from_dict, jwk_from_pem
 
 from six.moves.urllib.parse import urlencode
@@ -946,9 +947,17 @@ class OpenIDConnect(object):
 
             print(f'valid_token before group check {valid_token}')
             if valid_token:
-                group_from_token = token_info.get('group') if token_info.get('group') else ""
+                if token_info.get('group'):
+                  group_from_token = token_info.get('group')
+                elif token_info.get('groups'):
+                  group_from_token = token_info.get('groups')
+                else:
+                  group_from_token = ""
+                #group_from_token = token_info.get('group') if token_info.get('group') else ""
                 print(f'group_from_token = {group_from_token}')
                 token_groups = group_from_token if group_from_token else []
+                # if group names start with '/' (keycloak), remove the leading slash
+                token_groups = [ re.sub('^/','',g) for g in token_groups ]
             else:
                 token_groups = []
             print(f'token_groups= {token_groups}')
