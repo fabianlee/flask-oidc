@@ -1,13 +1,18 @@
-flask-oidc fork to support Windows 2019 ADFS OAuth2/OIDC
+flask-oidc fork with enhancements
 ==========
 
-`OpenID Connect <https://openid.net/connect/>`_ support for `Flask <http://flask.pocoo.org/>`_.  This fork was created by `fabianlee <https://github.com/fabianlee>`_ specifically to support Windows 2019 ADFS as the Authentication Server for OAuth2/OIDC.
+This fork was created by `fabianlee <https://github.com/fabianlee>`_ as a proof of concept for the following features:
+
+* Support Windows 2019 ADFS as OAuth2 Authentication Server
+* Support Keycloak as OAuth2 Authentication Servr
+* Additional 'groups_required' attribute on method decorator
+* Parameter 'prepopulate_from_well_known_url' to load most config URL from well-known/openid-configuration
 
 
 Python OAuth2 Client App and Resource Server
 ----------
 
-`The flask-oidc-python-tests github project <https://github.com/fabianlee/flask-oidc-python-tests>`_ implements a full OAuth2 Client App and Resource Server using this fork.
+`The flask-oidc-python-tests github project <https://github.com/fabianlee/flask-oidc-python-tests>`_ implements a full OAuth2 Client App and Resource Server that exercises this enhanced fork.
 
 
 ADFS 2019 OAuth2 configuration
@@ -19,4 +24,4 @@ ADFS 2019 OAuth2 configuration
 Project status
 ----------
 
-This fork was created purely to prove out Windows 2019 ADFS OAuth2/OIDC functionality.  Please see the main project for active development.
+This fork was created purely to prove out various OAuth2/OIDC enhancements.  Please see the main project for active development.
