@@ -233,7 +233,7 @@ class OpenIDConnect(object):
         well_known = f'https://{AUTH_SERVER}/realms/{REALM}/.well-known/openid-configuration'
       elif ("adfs" == AUTH_PROVIDER):
         well_known = f'https://{AUTH_SERVER}/adfs/.well-known/openid-configuration'
-      else:
+      else: # most providers will follow this default pattern (e.g. google)
         well_known = f'https://{AUTH_SERVER}/.well-known/openid-configuration'
       print(well_known)
       try:
@@ -251,7 +251,8 @@ class OpenIDConnect(object):
               "auth_uri": j['authorization_endpoint'],
               "token_uri": j['token_endpoint'],
               "jwks_uri": j['jwks_uri'],
-              "end_session_endpoint": j['end_session_endpoint']
+              # not all Auth providers have logout endpoint
+              "end_session_endpoint": j['end_session_endpoint'] if j.get('end_session_endpoint')!=None else ""
           }
         }
         print(f'populated from well-known: {client_secrets_dict}')
@@ -261,7 +262,8 @@ class OpenIDConnect(object):
         raise(e)
       except Exception as e:
         print("ERROR could not reach Auth Server well known configuration using httplib2")
-        return {"web": {} }
+        raise(e)
+        #return {"web": {} }
 
     @property
     def user_loggedin(self):
