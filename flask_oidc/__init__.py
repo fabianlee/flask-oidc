@@ -238,7 +238,7 @@ class OpenIDConnect(object):
 
       # allow manual override
       oauth2_only = app.config['OAUTH2_ONLY_NOT_OIDC'] if app.config.get('OAUTH2_ONLY_NOT_OIDC')!=None else False
-      # but there are also know providers that make it false
+      # but there are also know providers that force it
       if "github" == AUTH_PROVIDER or "spotify" == AUTH_PROVIDER:
           oauth2_only = True
       if oauth2_only:
@@ -861,8 +861,7 @@ class OpenIDConnect(object):
         id_token = credentials.id_token
         if not self._is_id_token_valid(id_token):
             logger.debug("Invalid ID token")
-            if id_token.get('hd') != current_app.config[
-                    'OIDC_GOOGLE_APPS_DOMAIN']:
+            if id_token.get('hd') != current_app.config['OIDC_GOOGLE_APPS_DOMAIN']:
                 return True, self._oidc_error(
                     "You must log in with an account from the {0} domain."
                     .format(current_app.config['OIDC_GOOGLE_APPS_DOMAIN']),
