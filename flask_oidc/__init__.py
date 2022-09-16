@@ -167,6 +167,13 @@ class OpenIDConnect(object):
         app.config.setdefault('OIDC_INTROSPECTION_AUTH_METHOD', 'client_secret_post')
         app.config.setdefault('OIDC_TOKEN_TYPE_HINT', 'access_token')
 
+        # OAuth2 Token are not required to be JWT, this allows you to override to false
+        # ADFS, Keycloak are JWT
+        # Google is not JWT 
+        app.config.setdefault('OIDC_ACCESS_TOKEN_IS_JWT', True)
+        # default URl when non-JWT access token is enabled
+        app.config.setdefault('OIDC_ACCESS_TOKEN_INFO_URL', "")
+
         if not 'openid' in app.config['OIDC_SCOPES']:
             raise ValueError('The value "openid" must be in the OIDC_SCOPES')
 
@@ -913,9 +920,9 @@ class OpenIDConnect(object):
                 valid_token = token_info.get('active', False)
             else:
                 valid_token = True
-                print('--- BEGIN Access Token claims ---')
-                print(token_info)
-                print('--- END Access Token claims ---')
+                #print('--- BEGIN Access Token claims ---')
+                #print(token_info)
+                #print('--- END Access Token claims ---')
 
                 if 'aud' in token_info and \
                         current_app.config['OIDC_RESOURCE_CHECK_AUD']:
@@ -934,12 +941,18 @@ class OpenIDConnect(object):
 
             print(f'valid_token before scope check {valid_token}')
             if valid_token:
-                scope_from_token = token_info.get('scope') if token_info.get('scope') else token_info.get('scp')
+                if token_info.get('scope'):
+                  scope_from_token = token_info.get('scope')
+                elif token_info.get('scp'):
+                  scope_from_token = token_info.get('scp')
+                else:
+                  scope_from_token = ""
                 print(f'scope_from_token = {scope_from_token}')
                 token_scopes = scope_from_token.split(' ') if scope_from_token else []
                 #token_scopes = token_info.get('scope', '').split(' ')
             else:
                 token_scopes = []
+
             print(f'token_scopes = {token_scopes}')
             print(f'scopes_required = {scopes_required}')
             has_required_scopes = scopes_required.issubset(
@@ -1042,12 +1055,22 @@ class OpenIDConnect(object):
         return wrapper
 
     def _get_token_info(self, token):
+        """ get JSON representation of Access Token
+        there is no requirement for the Access Token to be a JWT
+        If JWT (validation=jwks cert validation), (scope/group=decode JWT directly)
+        If not JWT (validation=call to userinfo_endpoint), (scope/group=call to nonjwt_tokeninfo_endpoint)
+        """
 
+        is_JWT = current_app.config['OIDC_ACCESS_TOKEN_IS_JWT']
+        auth_provider = current_app.config['OIDC_AUTH_PROVIDER']
+        if auth_provider == "google":
+          is_JWT = False
+
+        # pull JSON web keys if available, used to check signature on JWT
         jwks_url = self.client_secrets['jwks_uri']
         print(f'jwks_url: {jwks_url}')
         if jwks_url:
           jwto = jwt.JWT()
-
           http = httplib2.Http()
           try:
             content = http.request(jwks_url)[1]
@@ -1055,18 +1078,52 @@ class OpenIDConnect(object):
             print(f'SUCCESS pulling jwks')
             j = json.loads(content.decode())
             verifying_key = jwt.jwk_from_dict(j['keys'][0])
+            print(f'verifying key: {verifying_key}')
             alg = j['keys'][0]['alg']
-            x509  = j['keys'][0]['x5c'][0]
-            print(f'JWKS reports key type {alg} with x509 cert {x509}')
-          except Exception as e:
-            print("ERROR while trying to pull jwks_url")
-            print(e)
-            raise(e)
-          #print(verifying_key)
+            if j['keys'][0].get('x5c'):
+              pubcert = j['keys'][0]['x5c'][0]
+            elif j['keys'][0].get('n'):
+              pubcert = j['keys'][0]['n'][0]
+            print(f'JWKS reports key type {alg} with cert {pubcert}')
 
-          message_received = jwto.decode(token, verifying_key, do_time_check=True)
-          #print(message_received)
-          return message_received
+            if is_JWT:
+              try:
+                message_received = jwto.decode(token, verifying_key, do_time_check=True)
+              except Exception as jwtException:
+                print("ERROR trying to decode JWT")
+                raise(jwtException)
+            else:
+              print("Going to treat this Access Token as non-JWT, so validation will happen at userinfo_endpoint")
+
+              # use userinfo_uri endpoint by default
+              # but there may be better endpoint for pulling scope and groups
+              tokeninfo_url = current_app.config['OIDC_ACCESS_TOKEN_INFO_URL']
+              if "google" == auth_provider:
+                  tokeninfo_url = "https://www.googleapis.com/oauth2/v1/tokeninfo"
+
+              headers = {"Authorization":f'Bearer {token}'}
+
+              if len(tokeninfo_url)>0:
+                print(tokeninfo_url)
+                tokeninfo_url_with_qparams  = f'{tokeninfo_url}?access_token={token}'
+                content = http.request(tokeninfo_url_with_qparams,method="GET",headers=headers)[1]
+                message_received = json.loads( content.decode() )
+                print(f'back from tokeninfo_endpoint: {message_received}')
+              else:
+                print(self.client_secrets['userinfo_uri'])
+                content = http.request(self.client_secrets['userinfo_uri'],method="GET",headers=headers)[1]
+                message_received = json.loads( content.decode() )
+                print(f'back from userinfo_uri: {message_received}')
+
+          except Exception as jwksURLException:
+            print(f'Problem pulling jwks URL {jwks_url}')
+            raise(jwksURLException)
+
+        return message_received
+
+    def _get_token_info_with_nonstandard_specification_DEPRECATED(self, token):
+        """ The introspection method is not an OAuth2 standard, therefore deprecating
+        """
 
         # We hardcode to use client_secret_post, because that's what the Google
         # oauth2client library defaults to
