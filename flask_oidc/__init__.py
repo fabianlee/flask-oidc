@@ -174,6 +174,9 @@ class OpenIDConnect(object):
         # default URl when non-JWT access token is enabled
         app.config.setdefault('OIDC_ACCESS_TOKEN_INFO_URL', "")
 
+        # override to 'True' if we want use an OAuth2 only provider (e.g. github, spotify) that cannot do OIDC
+        app.config.setdefault('OAUTH2_ONLY_NOT_OIDC', False)
+
         if not 'openid' in app.config['OIDC_SCOPES']:
             raise ValueError('The value "openid" must be in the OIDC_SCOPES')
 
@@ -229,10 +232,46 @@ class OpenIDConnect(object):
     def auto_populate_openid_configuration(self, app):
       """ reaches out to Auth Server .well-known/openid-configuration to prepopulate common URL locations
       """
-      http = httplib2.Http()
-      WELL_KNOWN_URL = app.config['OIDC_WELL_KNOWN_OPENID_CONFIG_URL'] if app.config.get('OIDC_WELL_KNOWN_OPENID_CONFIG_URL') else ''
+
       AUTH_PROVIDER = app.config['OIDC_AUTH_PROVIDER']
       AUTH_SERVER = app.config['OIDC_AUTH_SERVER']
+
+      # allow manual override
+      oauth2_only = app.config['OAUTH2_ONLY_NOT_OIDC'] if app.config.get('OAUTH2_ONLY_NOT_OIDC')!=None else False
+      # but there are also know providers that make it false
+      if "github" == AUTH_PROVIDER or "spotify" == AUTH_PROVIDER:
+          oauth2_only = True
+      if oauth2_only:
+        print(f'OAUTH2_ONLY_NOT_OIDC {oauth2_only}')
+
+      # if auth provider only does OAUTH (and not OIDC), then do not try to go to OIDC well-known config
+      if oauth2_only:
+          if AUTH_PROVIDER == "github":
+            client_secrets_dict = {
+              "web": {
+                "issuer": "",
+                "userinfo_uri": "https://api.github.com/user",
+                "auth_uri": "https://github.com/login/oauth/authorize",
+                "token_uri": "https://github.com/login/oauth/access_token",
+                "jwks_uri": "",
+                "end_session_endpoint": ""
+              }
+            }
+            if AUTH_PROVIDER == "spotify":
+              client_secrets_dict = {
+                "web": {
+                  "issuer": "",
+                  "userinfo_uri": "https://api.spotify.com/v1/me",
+                  "auth_uri": "https://accounts.spotify.com/authorize",
+                  "token_uri": "https://accounts.spotify.com/api/token",
+                  "jwks_uri": "",
+                  "end_session_endpoint": ""
+                }
+              }
+            return client_secrets_dict
+
+      http = httplib2.Http()
+      WELL_KNOWN_URL = app.config['OIDC_WELL_KNOWN_OPENID_CONFIG_URL'] if app.config.get('OIDC_WELL_KNOWN_OPENID_CONFIG_URL') else ''
       if len(WELL_KNOWN_URL)>0:
         well_known = WELL_KNOWN_URL
       elif ("keycloak" == AUTH_PROVIDER):
@@ -244,7 +283,10 @@ class OpenIDConnect(object):
         well_known = f'https://{AUTH_SERVER}/.well-known/openid-configuration'
       print(well_known)
       try:
-        content = http.request(well_known)[1]
+        (response, content) = http.request(well_known)
+        if response.status != 200:
+            raise Exception(f'FAILED to get well-known remote configuration, got code {response.status}')
+
         #print( content.decode() )
         print("SUCCESS pulling openid-configuration, proves Auth Server certificate is valid in CA filestore")
       
