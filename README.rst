@@ -8,7 +8,7 @@ This fork was created by `fabianlee <https://github.com/fabianlee>`_ as a proof 
 * Tested against Google as Authentication Server
 * Tested against okta Authentication Server
 * Additional 'groups_required' attribute on method decorator, @oidc.accept_token
-* Parameter 'prepopulate_from_well_known_url' loads most config URL from well-known/openid-configuration
+* Parameter 'prepopulate_from_well_known_url' loads endpoints from well-known/openid-configuration
 
 
 Python OAuth2 Client App and Resource Server
