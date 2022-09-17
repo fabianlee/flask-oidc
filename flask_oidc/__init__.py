@@ -277,6 +277,8 @@ class OpenIDConnect(object):
       elif ("keycloak" == AUTH_PROVIDER):
         REALM = app.config['OIDC_OPENID_REALM']
         well_known = f'https://{AUTH_SERVER}/realms/{REALM}/.well-known/openid-configuration'
+      elif ("okta" == AUTH_PROVIDER):
+        well_known = f'https://{AUTH_SERVER}/oauth2/default/.well-known/openid-configuration'
       elif ("adfs" == AUTH_PROVIDER):
         well_known = f'https://{AUTH_SERVER}/adfs/.well-known/openid-configuration'
       else: # most providers will follow this default pattern (e.g. google)
@@ -1122,18 +1124,19 @@ class OpenIDConnect(object):
             #print( content.decode() )
             print(f'SUCCESS pulling jwks')
             j = json.loads(content.decode())
+            print(j['keys'][0])
             verifying_key = jwt.jwk_from_dict(j['keys'][0])
             print(f'verifying key: {verifying_key}')
             alg = j['keys'][0]['alg']
             if j['keys'][0].get('x5c'):
-              pubcert = j['keys'][0]['x5c'][0]
+              pubcert = j['keys'][0]['x5c']
             elif j['keys'][0].get('n'):
-              pubcert = j['keys'][0]['n'][0]
+              pubcert = j['keys'][0]['n']
             print(f'JWKS reports key type {alg} with cert {pubcert}')
 
             if is_JWT:
               try:
-                message_received = jwto.decode(token, verifying_key, do_time_check=True)
+                message_received = jwto.decode(token, algorithms=['RS256']) #verifying_key, do_time_check=True)
               except Exception as jwtException:
                 print("ERROR trying to decode JWT")
                 raise(jwtException)
