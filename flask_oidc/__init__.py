@@ -555,6 +555,10 @@ class OpenIDConnect(object):
 
         # ID token expired
         # when Google is the IdP, this happens after one hour
+        try:
+          print(f'only valid if now {time.time()} >= {id_token["exp"]}')
+        except Exception as exc:
+          raise(exc)
         if time.time() >= id_token['exp']:
             # get credentials from store
             try:
