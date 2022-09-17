@@ -995,8 +995,12 @@ class OpenIDConnect(object):
                 else:
                   scope_from_token = ""
                 print(f'scope_from_token = {scope_from_token}')
-                token_scopes = scope_from_token.split(' ') if scope_from_token else []
-                #token_scopes = token_info.get('scope', '').split(' ')
+
+                # might already be a list, check first
+                if isinstance(scope_from_token,list):
+                  token_scopes = scope_from_token
+                else:
+                  token_scopes = scope_from_token.split(' ') if scope_from_token else []
             else:
                 token_scopes = []
 
@@ -1128,15 +1132,11 @@ class OpenIDConnect(object):
             verifying_key = jwt.jwk_from_dict(j['keys'][0])
             print(f'verifying key: {verifying_key}')
             alg = j['keys'][0]['alg']
-            if j['keys'][0].get('x5c'):
-              pubcert = j['keys'][0]['x5c']
-            elif j['keys'][0].get('n'):
-              pubcert = j['keys'][0]['n']
-            print(f'JWKS reports key type {alg} with cert {pubcert}')
+            print(f'JWKS reports key type {alg}')
 
             if is_JWT:
               try:
-                message_received = jwto.decode(token, algorithms=['RS256']) #verifying_key, do_time_check=True)
+                message_received = jwto.decode(token, verifying_key, do_time_check=True) #, algorithms=['RS256'])
               except Exception as jwtException:
                 print("ERROR trying to decode JWT")
                 raise(jwtException)
