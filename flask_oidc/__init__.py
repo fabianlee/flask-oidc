@@ -967,6 +967,13 @@ class OpenIDConnect(object):
             if auth_provider == "spotify" or auth_provider == "github":
                 print("This is a non-OIDC provider, so validation will happen at userinfo_uri")
                 userinfo_uri = self.client_secrets['userinfo_uri']
+                # these two providers may have values for userinfo_uri auto-populated
+                # but we want to use these endpoints instead because of their non-JWT access tokens
+                if "google" == auth_provider:
+                  userinfo_uri = "https://www.googleapis.com/oauth2/v1/tokeninfo"
+                elif "spotify" == auth_provider:
+                  userinfo_uri = "https://api.spotify.com/v1/me"
+
                 print(userinfo_uri)
                 headers = {"Authorization":f'Bearer {token}'}
                 http = httplib2.Http()
@@ -974,10 +981,10 @@ class OpenIDConnect(object):
                 message_received = json.loads( content.decode() )
                 print(f'back from userinfo_uri: {message_received}')
 
-                if scopes_required and auth_provider == "github":
-                    return "cannot determine scopes for github OAuth2-only Access Token"
-                elif groups_required and auth_provider == "github":
-                    return "cannot determine groups for github OAuth2-only Access Token"
+                if scopes_required:
+                    return f"cannot determine scopes for {auth_provider} OAuth2-only Access Token"
+                elif groups_required:
+                    return f"cannot determine groups for {auth_provider} OAuth2-only Access Token"
 
                 # save as token info and return success
                 g.oidc_token_info = message_received
@@ -1136,7 +1143,7 @@ class OpenIDConnect(object):
 
         is_JWT = current_app.config['OIDC_ACCESS_TOKEN_IS_JWT']
         auth_provider = current_app.config['OIDC_AUTH_PROVIDER']
-        if auth_provider == "google" or auth_provider == "github":
+        if auth_provider == "google" or auth_provider == "github" or auth_provider == "spotify":
           is_JWT = False
 
         # pull JSON web keys if available, used to check signature on JWT
@@ -1168,14 +1175,21 @@ class OpenIDConnect(object):
               # use userinfo_uri endpoint by default
               # but there may be better endpoint for pulling scope and groups
               tokeninfo_url = current_app.config['OIDC_ACCESS_TOKEN_INFO_URL']
+              # these providers will have userinfo_uri from the well-known location
+              # but we need to use these URL instead to pull user info
               if "google" == auth_provider:
                   tokeninfo_url = "https://www.googleapis.com/oauth2/v1/tokeninfo"
+              elif "spotify" == auth_provider:
+                  tokeninfo_url = "https://api.spotify.com/v1/me"
 
               headers = {"Authorization":f'Bearer {token}'}
 
               if len(tokeninfo_url)>0:
                 print(tokeninfo_url)
-                tokeninfo_url_with_qparams  = f'{tokeninfo_url}?access_token={token}'
+                # ok to have access_token req param and header for google, but spotify does not like
+                # TODO retest with google
+                #tokeninfo_url_with_qparams  = f'{tokeninfo_url}?access_token={token}'
+                tokeninfo_url_with_qparams  = f'{tokeninfo_url}'
                 content = http.request(tokeninfo_url_with_qparams,method="GET",headers=headers)[1]
                 message_received = json.loads( content.decode() )
                 print(f'back from tokeninfo_endpoint: {message_received}')
