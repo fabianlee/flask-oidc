@@ -1186,9 +1186,7 @@ class OpenIDConnect(object):
 
               if len(tokeninfo_url)>0:
                 print(tokeninfo_url)
-                # ok to have access_token req param and header for google, but spotify does not like
-                # TODO retest with google
-                #tokeninfo_url_with_qparams  = f'{tokeninfo_url}?access_token={token}'
+                # no need to add query parameter 'access_token', the access token is passed in Authorization header
                 tokeninfo_url_with_qparams  = f'{tokeninfo_url}'
                 content = http.request(tokeninfo_url_with_qparams,method="GET",headers=headers)[1]
                 message_received = json.loads( content.decode() )
