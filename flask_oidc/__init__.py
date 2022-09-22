@@ -962,6 +962,27 @@ class OpenIDConnect(object):
                 logger.error(str(ex))
                 return str(ex)
 
+            # shortcut evaluation of token validity if this is non-OIDC provider
+            auth_provider = current_app.config['OIDC_AUTH_PROVIDER']
+            if auth_provider == "spotify" or auth_provider == "github":
+                print("This is a non-OIDC provider, so validation will happen at userinfo_uri")
+                userinfo_uri = self.client_secrets['userinfo_uri']
+                print(userinfo_uri)
+                headers = {"Authorization":f'Bearer {token}'}
+                http = httplib2.Http()
+                content = http.request(userinfo_uri,method="GET",headers=headers)[1]
+                message_received = json.loads( content.decode() )
+                print(f'back from userinfo_uri: {message_received}')
+
+                if scopes_required and auth_provider == "github":
+                    return "cannot determine scopes for github OAuth2-only Access Token"
+                elif groups_required and auth_provider == "github":
+                    return "cannot determine groups for github OAuth2-only Access Token"
+
+                # save as token info and return success
+                g.oidc_token_info = message_received
+                return True
+
             jwks_uri = self.client_secrets['jwks_uri']
             if not jwks_uri:
                 valid_token = token_info.get('active', False)
@@ -1091,6 +1112,7 @@ class OpenIDConnect(object):
                 if (validity is True) or (not require_token):
                     return view_func(*args, **kwargs)
                 else:
+                    print(validity)
                     response_body = {'error': 'invalid_token',
                                      'error_description': validity}
                     if render_errors:
@@ -1100,7 +1122,7 @@ class OpenIDConnect(object):
                     if (str(validity).__contains__("does not have required ")):
                         return response_body, 403, {'WWW-Authenticate': 'Bearer'}
                     else:
-                        return response_body, 401, {'WWW-Authenticate': 'Bearer'}
+                        return response_body, 401, {'WWW-Authenticate': validity}
 
             return decorated
         return wrapper
@@ -1114,7 +1136,7 @@ class OpenIDConnect(object):
 
         is_JWT = current_app.config['OIDC_ACCESS_TOKEN_IS_JWT']
         auth_provider = current_app.config['OIDC_AUTH_PROVIDER']
-        if auth_provider == "google":
+        if auth_provider == "google" or auth_provider == "github":
           is_JWT = False
 
         # pull JSON web keys if available, used to check signature on JWT
@@ -1166,6 +1188,16 @@ class OpenIDConnect(object):
           except Exception as jwksURLException:
             print(f'Problem pulling jwks URL {jwks_url}')
             raise(jwksURLException)
+
+        else:
+          print("There is no jwks_url, going to treat this Access Token as non-JWT, so validation will happen at userinfo_uri")
+          userinfo_uri = self.client_secrets['userinfo_uri']
+          print(userinfo_uri)
+          headers = {"Authorization":f'Bearer {token}'}
+          http = httplib2.Http()
+          content = http.request(userinfo_uri,method="GET",headers=headers)[1]
+          message_received = json.loads( content.decode() )
+          print(f'back from userinfo_uri: {message_received}')
 
         return message_received
 
