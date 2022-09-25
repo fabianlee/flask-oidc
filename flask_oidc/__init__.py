@@ -270,7 +270,7 @@ class OpenIDConnect(object):
               }
             return client_secrets_dict
 
-      http = httplib2.Http()
+      http = httplib2.Http(timeout=3.0) # 3 second timeout
       WELL_KNOWN_URL = app.config['OIDC_WELL_KNOWN_OPENID_CONFIG_URL'] if app.config.get('OIDC_WELL_KNOWN_OPENID_CONFIG_URL') else ''
       if len(WELL_KNOWN_URL)>0:
         well_known = WELL_KNOWN_URL
@@ -285,7 +285,7 @@ class OpenIDConnect(object):
         well_known = f'https://{AUTH_SERVER}/.well-known/openid-configuration'
       print(well_known)
       try:
-        (response, content) = http.request(well_known)
+        (response, content) = http.request(well_known,"GET")
         if response.status != 200:
             raise Exception(f'FAILED to get well-known remote configuration, got code {response.status}')
 
